@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<base target="_top">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Sales Analytics Demo: AI Insights + Chat</title>
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  body { font-family: 'Inter', system-ui, sans-serif; background:#f8fafc; color:#1e293b; }
+  .scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+  .scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+  .tab-active { border-bottom: 2px solid #2563eb; color: #2563eb; font-weight: 600; }
+  select, input { min-width: 0; }
+  .repcard { transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
+  .repcard:hover { transform: translateY(-2px); box-shadow: 0 8px 20px -8px rgba(15,23,42,.25); }
+  .bar { transition: width .5s ease; }
+  .full #repSection, .full #kpis { display:none; }
+  main.max-w-7xl, header > .max-w-7xl { max-width: none; }
+  main.max-w-7xl { padding: 14px 18px; }
+  header > .max-w-7xl { padding-left: 18px; padding-right: 18px; }
+  .full main.max-w-7xl { padding: 10px 18px; }
+  .full main > :not([hidden]) ~ :not([hidden]) { margin-top: .6rem; }
+  .full #fBar { gap: .6rem; }
+  .tblfull { max-height: calc(100vh - 275px); min-height: 320px; overflow: auto; }
+  .tblfull thead th { position: sticky; top: 0; z-index: 5; }
+  .tblfull thead th:first-child { z-index: 6; }
+  .tblfull td.sticky { z-index: 4; }
+  .tblfull th, .tblfull td { white-space: nowrap; padding: .5rem .7rem; }
+  .tblfull td:first-child, .tblfull th:first-child { white-space: normal; max-width: 320px; }
+</style>
+</head>
+<body class="min-h-screen antialiased">
+
+<div id="overlay" class="hidden fixed inset-0 bg-white/90 z-50 flex items-center justify-center">
+  <div class="text-center"><div class="w-8 h-8 mx-auto border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+  <p id="overlayMsg" class="text-sm text-slate-600 mt-3">Loading sales data…</p></div>
+</div>
+
+<header class="bg-slate-900 text-white sticky top-0 z-30 shadow-md">
+  <div class="max-w-7xl mx-auto px-4 h-12 flex items-center justify-between gap-3">
+    <div class="min-w-0">
+      <h1 class="text-sm sm:text-base font-bold leading-none truncate"><span id="zoneName">Sales</span> Analytics</h1>
+      <p class="text-[10px] text-slate-400 mt-0.5 truncate"><span id="who">—</span> · <span id="updated">—</span></p>
+    </div>
+    <div class="flex items-center gap-2 shrink-0">
+      <button onclick="loadData()" class="px-3 py-1 text-xs font-medium bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700">↻ <span class="hidden sm:inline">Refresh</span></button>
+      <button onclick="logout()" class="px-3 py-1 text-xs font-medium bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700">Sign out</button>
+    </div>
+  </div>
+</header>
+<div id="demoBar" class="hidden bg-amber-100 text-amber-900 text-xs text-center py-1.5 px-3">Live demo with made-up data. Try the <b>AI Insights</b> and <b>AI Chat</b> tabs. Here the AI text is generated from the sample numbers by fixed rules; in the real system Gemini writes it.</div>
+<div id="warnBar" class="hidden bg-rose-100 text-rose-900 text-xs text-center py-1.5 px-3"></div>
+
+<div id="login" class="fixed inset-0 z-[60] bg-slate-900 flex items-center justify-center p-4">
+  <form onsubmit="doLogin(event)" class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4">
+    <div><h2 class="text-lg font-bold">Sales Analytics</h2><p class="text-xs text-slate-500 mt-1">Sign in with the name and password your sales admin gave you.</p></div>
+    <label class="block text-xs"><span class="text-slate-500 font-medium">Name</span><input id="lName" autocomplete="username" required class="mt-1 w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm"></label>
+    <label class="block text-xs"><span class="text-slate-500 font-medium">Password</span><input id="lPass" type="password" autocomplete="current-password" required class="mt-1 w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm"></label>
+    <p id="lErr" class="text-xs text-rose-600 min-h-[1rem]"></p>
+    <button id="lBtn" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm rounded-lg py-2.5">Sign in</button>
+    <p id="lDemo" class="hidden text-[11px] text-amber-700 bg-amber-50 rounded-lg p-2">Demo mode: any name and password work. Type <b>zsm</b>, <b>sm</b>, <b>asm</b> or <b>rep</b> as the name to see how each role gets a restricted view.</p>
+  </form>
+</div>
+<div id="cmodal" class="hidden fixed inset-0 z-40 bg-slate-900/50 flex items-center justify-center p-3" onclick="if(event.target===this)closeCust()">
+  <div class="bg-white rounded-xl shadow-xl w-full max-w-5xl max-h-[88vh] flex flex-col overflow-hidden">
+    <div class="p-4 border-b border-slate-100 flex justify-between items-start gap-3">
+      <div class="min-w-0"><h3 id="cmTitle" class="text-base font-bold truncate"></h3><p id="cmSub" class="text-xs text-slate-500 mt-0.5"></p></div>
+      <div class="flex gap-2 shrink-0"><button onclick="closeCust()" class="px-3 py-1.5 text-xs font-medium bg-slate-100 hover:bg-slate-200 rounded-lg">Close ✕</button></div>
+    </div>
+    <div id="cmBody" class="overflow-auto scroll"></div>
+  </div>
+</div>
+
+<main class="max-w-7xl mx-auto px-4 py-5 space-y-5">
+
+  <section class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+    <div id="fGrid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-8 gap-3 text-xs mb-3">
+      <label class="block"><span class="text-slate-500 font-medium">City</span><div id="fCity" class="ms relative mt-1" onclick="event.stopPropagation()"></div></label>
+      <label class="block"><span class="text-slate-500 font-medium">Month</span><div id="fMonth" class="ms relative mt-1" onclick="event.stopPropagation()"></div></label>
+      <label class="block"><span class="text-slate-500 font-medium">ZSM</span><div id="fZsm" class="ms relative mt-1" onclick="event.stopPropagation()"></div></label>
+      <label class="block"><span class="text-slate-500 font-medium">SM</span><div id="fSm" class="ms relative mt-1" onclick="event.stopPropagation()"></div></label>
+      <label class="block"><span class="text-slate-500 font-medium">ASM</span><div id="fAsm" class="ms relative mt-1" onclick="event.stopPropagation()"></div></label>
+      <label class="block"><span class="text-slate-500 font-medium">Sales rep</span><div id="fRep" class="ms relative mt-1" onclick="event.stopPropagation()"></div></label>
+      <label class="block"><span class="text-slate-500 font-medium">Town / area</span><div id="fTown" class="ms relative mt-1" onclick="event.stopPropagation()"></div></label>
+      <label class="block"><span class="text-slate-500 font-medium">Product group</span><div id="fGrp" class="ms relative mt-1" onclick="event.stopPropagation()"></div></label>
+    </div>
+    <div id="fBar" class="flex flex-wrap items-center gap-3">
+      <button id="fToggle" onclick="toggleFilters()" class="px-3 py-1.5 text-xs font-semibold bg-slate-900 text-white rounded-lg shrink-0"></button>
+      <input type="text" id="fSearch" placeholder="Search pharmacy, town, product…" class="w-full sm:w-64 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs">
+      <div id="chips" class="flex flex-wrap gap-2 text-[11px] flex-1 min-w-0"></div>
+      <button onclick="resetFilters()" class="text-xs font-medium text-slate-500 hover:text-blue-600 shrink-0">↺ Reset</button>
+    </div>
+    <p id="fHint" class="text-[10px] text-slate-400 mt-2">Every filter lets you tick several values at once. Filters are interlinked: each dropdown only lists values that exist under the other selections. Click scorecard cards, bars or chart slices to add or remove them from the filter (click again to remove). The hierarchy comes from the Reps tab. Targets apply by rep and month, so they disappear when you filter by city or town. Town filters customers and towns, product group filters products. Net sales and targets come from your sales sheets, already split between reps by area. Units and products come from invoice lines and follow city, month, rep and group. Search filters customers and products. Click a pharmacy in Customers for its product-wise units.</p>
+  </section>
+
+  <!-- REP SCORECARD (front page) -->
+  <section id="repSection" class="bg-white p-4 sm:p-5 rounded-xl shadow-sm border border-slate-200">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <div>
+        <h2 class="text-base font-bold">Sales Hierarchy Scorecard</h2>
+        <p id="repSub" class="text-xs text-slate-500 mt-0.5"></p>
+      </div>
+      <div id="lvPills" class="flex bg-slate-100 rounded-lg p-0.5 text-xs font-semibold"></div>
+      <button id="repDrill" onclick="drillDown()" class="hidden text-xs font-semibold text-blue-600 hover:underline"></button>
+      <label class="text-xs flex items-center gap-2"><span class="text-slate-500 font-medium">Sort by</span>
+        <select id="repSort" onchange="SORTR=this.value;renderReps()" class="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 font-semibold">
+          <option value="sales">Net sales</option><option value="ach">Achievement</option><option value="growth">Growth vs last month</option><option value="name">Name</option>
+        </select></label>
+    </div>
+    <div id="repGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4"></div>
+    <div id="repMore" class="text-center mt-3"></div>
+  </section>
+
+  <section class="grid grid-cols-2 lg:grid-cols-4 gap-4" id="kpis"></section>
+
+  <nav class="bg-white px-4 rounded-xl shadow-sm border-b border-slate-200 flex gap-6 text-sm font-medium overflow-x-auto scroll">
+    <button data-tab="analytics" class="tabBtn py-3 px-1 whitespace-nowrap tab-active">Analytics</button>
+    <button data-tab="cust" class="tabBtn py-3 px-1 whitespace-nowrap text-slate-500">Customers</button>
+    <button data-tab="towns" class="tabBtn py-3 px-1 whitespace-nowrap text-slate-500">Towns</button>
+    <button data-tab="insights" class="tabBtn py-3 px-1 whitespace-nowrap text-slate-500">AI Insights</button>
+    <button data-tab="chat" class="tabBtn py-3 px-1 whitespace-nowrap text-slate-500">AI Chat</button>
+  </nav>
+
+  <div id="tab-analytics" class="space-y-5">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <div class="lg:col-span-2 bg-white p-5 rounded-xl shadow-sm border border-slate-200"><h3 class="text-sm font-bold">Monthly Net Sales vs Target</h3><p class="text-xs text-slate-400 mb-3">Click a bar to filter by month</p><div class="h-64"><canvas id="cTrend"></canvas></div></div>
+      <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200"><h3 class="text-sm font-bold">Sales by City</h3><p class="text-xs text-slate-400 mb-3">Click a slice to filter</p><div class="h-64"><canvas id="cCity"></canvas></div></div>
+    </div>
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <div class="lg:col-span-2 bg-white p-5 rounded-xl shadow-sm border border-slate-200"><h3 class="text-sm font-bold">Top Reps by Net Sales</h3><p class="text-xs text-slate-400 mb-3">Click a bar to filter by rep</p><div class="h-72"><canvas id="cRep"></canvas></div></div>
+      <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200"><h3 class="text-sm font-bold" id="slabTitle">Pharmacies by Monthly Sales</h3><p class="text-xs text-slate-400 mb-3">Number of customers in each sales slab</p><div class="h-72"><canvas id="cSlab"></canvas></div></div>
+    </div>
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <div class="lg:col-span-2 bg-white p-5 rounded-xl shadow-sm border border-slate-200"><h3 class="text-sm font-bold">Top 10 Products by Units</h3><p class="text-xs text-slate-400 mb-3">Units sold in the selected period</p><div class="h-72"><canvas id="cProd"></canvas></div></div>
+      <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200"><h3 class="text-sm font-bold">Units by Product Group</h3><p class="text-xs text-slate-400 mb-3">Click a slice to filter</p><div class="h-72"><canvas id="cGrp"></canvas></div></div>
+    </div>
+  </div>
+  <div id="tab-cust" class="hidden"></div>
+  <div id="tab-towns" class="hidden"></div>
+  <div id="tab-insights" class="hidden space-y-4">
+    <div><h2 class="text-base font-bold">AI Insights</h2><p class="text-xs text-slate-500 mt-0.5">Covers everything your role can see, for the latest month. Dashboard filters do not apply here.</p></div>
+    <div id="insBody" class="space-y-4"></div>
+  </div>
+  <div id="tab-chat" class="hidden">
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col" style="height:calc(100vh - 230px);min-height:420px">
+      <div class="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
+        <div><h2 class="text-sm font-bold">AI Chat</h2><p class="text-[11px] text-slate-400">Answers use your summary numbers only. Pharmacy names are masked before they reach Google.</p></div>
+        <button id="chatClear" onclick="clearChat()" class="hidden text-xs font-medium text-slate-500 hover:text-blue-600">Clear chat</button>
+      </div>
+      <div id="chatMsgs" class="flex-1 overflow-auto scroll p-4"></div>
+      <div class="border-t border-slate-100 p-3 flex items-end gap-2">
+        <textarea id="chatIn" rows="1" maxlength="600" placeholder="Ask about reps, pharmacies, products, targets…" class="flex-1 resize-none bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm"></textarea>
+        <button id="chatSend" onclick="sendChat()" class="px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg">Send</button>
+      </div>
+      <p class="px-4 pb-2 text-[10px] text-slate-400">AI can make mistakes. Check important figures in the Analytics tab before acting.</p>
+    </div>
+  </div>
+</main>
+
+<script>
+/* ================= CONFIG / STATE ================= */
+let SESSION = null;
+const DEMO = (typeof google === 'undefined' || !google.script);
+const MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MF = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+let DB = { cust:[], prod:[], tgt:[] };
+const F = { city:[], month:[], zsm:[], sm:[], asm:[], rep:[], town:[], grp:[], q:'' };
+let FCOL = false, OPEN = null, FOCUSQ = false; const MSQ = {};
+const PAGE = { reps:12, cust:100, towns:100 };
+const charts = {};
+let currentTab = 'analytics', CUR = '', PREV = '', Cn = [], Tn = [], Pn = [], SORT = 'drop', SORTR = 'sales', LV = null, YR = null;
+
+/* ================= HELPERS ================= */
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const nf = new Intl.NumberFormat('en-US');
+const full = v => nf.format(Math.round(v || 0));
+const money = v => { const a = Math.abs(v); return (v < 0 ? '-' : '') + 'Rs ' + (a >= 1e7 ? (a/1e7).toFixed(2) + ' Cr' : a >= 1e5 ? (a/1e5).toFixed(2) + ' L' : nf.format(Math.round(a))); };
+const tick = v => v >= 1e7 ? (v/1e7) + ' Cr' : v >= 1e5 ? (v/1e5) + ' L' : v;
+const mLabel = k => k ? MN[+k.slice(5) - 1] + ' ' + k.slice(2, 4) : '';
+const mFull = k => k ? MF[+k.slice(5) - 1] + ' ' + k.slice(0, 4) : '';
+const prevKey = k => { if (!k) return ''; let y = +k.slice(0, 4), m = +k.slice(5) - 1; if (!m) { m = 12; y--; } return y + '-' + String(m).padStart(2, '0'); };
+const inP = m => !F.month.length || F.month.includes(m);
+const perTxt = () => !F.month.length ? 'all months' : F.month.length === 1 ? mFull(F.month[0]) : F.month.length + ' months';
+const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
+const enc = s => encodeURIComponent(s);
+const chg = g => g == null ? '<span class="text-slate-400">—</span>' : g >= 0 ? '<span class="text-emerald-600 font-semibold">▲ ' + (g*100).toFixed(0) + '%</span>' : '<span class="text-rose-600 font-semibold">▼ ' + Math.abs(g*100).toFixed(0) + '%</span>';
+function badge(t, tone) {
+  const m = { emerald:'bg-emerald-100 text-emerald-800', rose:'bg-rose-100 text-rose-800', amber:'bg-amber-100 text-amber-800', blue:'bg-blue-100 text-blue-800', slate:'bg-slate-100 text-slate-600' };
+  return '<span class="' + m[tone] + ' px-2 py-0.5 rounded-full text-[10px] font-bold">' + t + '</span>';
+}
+
+/* ================= LOAD ================= */
+function showOverlay(msg, isErr) { const o = document.getElementById('overlay'); o.classList.remove('hidden'); document.getElementById('overlayMsg').innerHTML = isErr ? '<span class="text-rose-600">' + esc(msg) + '</span>' : esc(msg); }
+function hideOverlay() { document.getElementById('overlay').classList.add('hidden'); }
+function ingest(res) {
+  const nk = s => String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim();
+  const H = {}; (res.hier || []).forEach(h => H[nk(h.rep)] = h);
+  const en = r => { const h = H[nk(r.rep)] || {}; r.asm = h.asm || 'Unassigned'; r.sm = h.sm || 'Unassigned'; r.zsm = h.zsm || 'Unassigned'; return r; };
+  DB = { cust: (res.cust || []).map(en), prod: (res.prod || []).map(en), tgt: (res.tgt || []).map(en) };
+  if (!LV) LV = { ADMIN:'zsm', ZSM:'sm', SM:'asm' }[res.user && res.user.role] || 'rep';
+  document.getElementById('zoneName').textContent = res.zone || 'Sales';
+  const wb = document.getElementById('warnBar'); wb.textContent = res.warn || ''; wb.classList.toggle('hidden', !res.warn);
+  document.getElementById('who').textContent = res.user ? res.user.name + ' (' + res.user.role.toLowerCase() + ')' : '';
+  document.getElementById('updated').textContent = 'Data updated ' + res.updated;
+  hideOverlay(); update();
+}
+function loadData() {
+  if (!SESSION) { showLogin(); return; }
+  showOverlay('Loading sales data…');
+  if (DEMO) { setTimeout(() => ingest(demoData(SESSION)), 150); return; }
+  google.script.run.withSuccessHandler(ingest)
+    .withFailureHandler(err => { const m = String(err && err.message || err); if (/expired|denied/i.test(m)) logout(m); else showOverlay('Could not load data: ' + m, true); })
+    .getDashboardData(SESSION);
+}
+function showLogin(msg) {
+  document.getElementById('overlay').classList.add('hidden');
+  document.getElementById('login').classList.remove('hidden');
+  document.getElementById('lErr').textContent = msg || '';
+  document.getElementById('lBtn').disabled = false; document.getElementById('lBtn').textContent = 'Sign in';
+}
+function doLogin(e) {
+  e.preventDefault();
+  const n = document.getElementById('lName').value, p = document.getElementById('lPass').value, b = document.getElementById('lBtn');
+  b.disabled = true; b.textContent = 'Signing in…'; document.getElementById('lErr').textContent = '';
+  const done = r => { if (r && r.ok) { SESSION = r.session; document.getElementById('lPass').value = ''; document.getElementById('login').classList.add('hidden'); loadData(); } else showLogin(r && r.msg || 'Could not sign in.'); };
+  if (DEMO) { setTimeout(() => done({ ok:true, session:'demo:' + n }), 300); return; }
+  google.script.run.withSuccessHandler(done).withFailureHandler(err => showLogin(String(err && err.message || err))).login(n, p);
+}
+function logout(msg) {
+  if (!DEMO && SESSION) google.script.run.logout(SESSION);
+  SESSION = null; DB = { cust:[], prod:[], tgt:[] };
+  Object.assign(F, { city:[], month:[], zsm:[], sm:[], asm:[], rep:[], town:[], grp:[], q:'' }); LV = null; OPEN = null; document.getElementById('fSearch').value = '';
+  closeCust(); update();
+  INS = null; INS_BUSY = false; CHAT = []; CHAT_BUSY = false; $('insBody').innerHTML = ''; renderChat();
+  showLogin(typeof msg === 'string' ? msg : '');
+}
+
+/* ================= FILTER LOGIC (interlinked) ================= */
+const DIMS = {
+  city:  { id:'fCity',  all:'All Cities',   ds:{ cust:r=>r.city, prod:r=>r.city } },
+  month: { id:'fMonth', all:'All Months',   ds:{ cust:r=>r.m, prod:r=>r.m, tgt:r=>r.m } },
+  zsm:   { id:'fZsm',   all:'All ZSMs',     ds:{ cust:r=>r.zsm, prod:r=>r.zsm, tgt:r=>r.zsm } },
+  sm:    { id:'fSm',    all:'All SMs',      ds:{ cust:r=>r.sm, prod:r=>r.sm, tgt:r=>r.sm } },
+  asm:   { id:'fAsm',   all:'All ASMs',     ds:{ cust:r=>r.asm, prod:r=>r.asm, tgt:r=>r.asm } },
+  rep:   { id:'fRep',   all:'All Reps',     ds:{ cust:r=>r.rep, prod:r=>r.rep, tgt:r=>r.rep } },
+  town:  { id:'fTown',  all:'All Towns',    ds:{ cust:r=>r.town } },
+  grp:   { id:'fGrp',   all:'All Groups',   ds:{ prod:r=>r.grp } }
+};
+// skip: one filter key, or an array of keys, to ignore
+function ok(ds, r, skip) {
+  const sk = Array.isArray(skip) ? skip : [skip];
+  for (const k in DIMS) {
+    if (sk.indexOf(k) >= 0 || !F[k].length) continue;
+    const g = DIMS[k].ds[ds];
+    if (g && F[k].indexOf(g(r)) < 0) return false;
+  }
+  if (F.q && (ds === 'cust' || ds === 'prod')) {
+    const h = ds === 'cust' ? (r.name + ' ' + r.code + ' ' + r.town + ' ' + r.rep) : (r.name + ' ' + r.code);
+    if (!h.toLowerCase().includes(F.q)) return false;
+  }
+  return true;
+}
+function optionsFor(key) {
+  const set = new Set();
+  for (const ds in DIMS[key].ds) DB[ds].forEach(r => { if (ok(ds, r, key)) { const v = DIMS[key].ds[ds](r); if (v) set.add(v); } });
+  return [...set].sort((a, b) => a.localeCompare(b));
+}
+const msLab = (k, v) => k === 'month' ? mFull(v) : v;
+function renderMS(k, opts) {
+  const d = DIMS[k], el = document.getElementById(d.id), sel = F[k], open = OPEN === k, q = (MSQ[k] || '').toLowerCase();
+  const text = !sel.length ? d.all : sel.length === 1 ? msLab(k, sel[0]) : sel.length + ' selected';
+  const items = opts.map(v => { const l = msLab(k, v);
+    return '<label data-t="' + esc(l.toLowerCase()) + '" class="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 cursor-pointer text-xs font-medium"' + (q && !l.toLowerCase().includes(q) ? ' style="display:none"' : '') + '>'
+      + '<input type="checkbox" class="accent-blue-600" ' + (sel.includes(v) ? 'checked ' : '') + 'onchange="msToggle(\'' + k + '\',decodeURIComponent(\'' + enc(v) + '\'))"><span class="truncate">' + esc(l) + '</span></label>'; }).join('');
+  el.innerHTML = '<button type="button" onclick="msOpen(\'' + k + '\')" class="w-full text-left bg-slate-50 border rounded-lg px-2 py-2 font-semibold flex items-center justify-between gap-1 ' + (sel.length ? 'border-blue-400 text-blue-700' : 'border-slate-200') + '"><span class="truncate">' + esc(text) + '</span><span class="text-slate-400 text-[10px]">▾</span></button>'
+    + (open ? '<div class="absolute z-40 mt-1 w-60 max-w-[80vw] bg-white border border-slate-200 rounded-lg shadow-xl">'
+      + '<div class="p-2 border-b border-slate-100"><input id="msq" type="text" value="' + esc(MSQ[k] || '') + '" oninput="msSearch(\'' + k + '\',this.value)" placeholder="Search…" class="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs"></div>'
+      + '<div class="flex justify-between px-3 py-1.5 text-[11px] border-b border-slate-100"><button type="button" onclick="msAll(\'' + k + '\')" class="text-blue-600 font-semibold">Select all shown</button><button type="button" onclick="msClear(\'' + k + '\')" class="text-slate-500 font-semibold">Clear</button></div>'
+      + '<div id="msl" class="max-h-56 overflow-y-auto scroll py-1">' + (items || '<p class="px-3 py-2 text-xs text-slate-400">No values</p>') + '</div></div>' : '');
+  if (open && FOCUSQ) { const i = el.querySelector('#msq'); if (i) { i.focus(); FOCUSQ = false; } }
+}
+function msOpen(k) { OPEN = OPEN === k ? null : k; MSQ[k] = ''; FOCUSQ = OPEN === k; syncDropdowns(); }
+function msSearch(k, v) { MSQ[k] = v; const t = v.toLowerCase(); document.querySelectorAll('#msl label').forEach(l => l.style.display = l.dataset.t.includes(t) ? '' : 'none'); }
+function msToggle(k, v) { F[k] = F[k].includes(v) ? F[k].filter(x => x !== v) : [...F[k], v]; update(); }
+function msClear(k) { F[k] = []; update(); }
+function msAll(k) { const q = (MSQ[k] || '').toLowerCase(); F[k] = [...new Set([...F[k], ...optionsFor(k).filter(v => msLab(k, v).toLowerCase().includes(q))])]; update(); }
+function syncDropdowns() {
+  for (let pass = 0; pass < 3; pass++) {
+    let changed = false;
+    Object.keys(DIMS).forEach(k => { if (F[k].length) { const o = optionsFor(k), keep = F[k].filter(v => o.includes(v)); if (keep.length !== F[k].length) { F[k] = keep; changed = true; } } });
+    if (!changed) break;
+  }
+  Object.keys(DIMS).forEach(k => renderMS(k, optionsFor(k)));
+}
+function resetFilters() { Object.assign(F, { city:[], month:[], zsm:[], sm:[], asm:[], rep:[], town:[], grp:[], q:'' }); document.getElementById('fSearch').value = ''; OPEN = null; update(); }
+// Charts and cards: click adds or removes a value, so several can be picked.
+function setFilter(key, val) { F[key] = F[key].includes(val) ? F[key].filter(x => x !== val) : [...F[key], val]; update(); }
+
+/* ================= UPDATE ================= */
+function group(keyFn, src) {
+  const M = new Map();
+  for (const r of (src || Cn)) {
+    const k = keyFn(r); let o = M.get(k);
+    if (!o) { o = { k, tot:0, cur:0, prev:0, cs:new Set(), ct:new Set(), r }; M.set(k, o); }
+    o.ct.add(r.city);
+    if (r.m === CUR) o.cur += r.s;
+    if (r.m === PREV) o.prev += r.s;
+    if (inP(r.m)) { o.tot += r.s; if (r.s) o.cs.add(r.id); }
+  }
+  return [...M.values()];
+}
+function sumBy(arr, keyFn, valFn) { const o = {}; arr.forEach(r => { const k = keyFn(r) || 'Other'; o[k] = (o[k] || 0) + valFn(r); }); return o; }
+function update() {
+  syncDropdowns();
+  PAGE.reps = 12; PAGE.cust = 100; PAGE.towns = 100;
+  Cn = DB.cust.filter(r => ok('cust', r, 'month'));
+  // Targets are set per rep, so they cannot be split by customer city or town.
+  Tn = (!F.city.length && !F.town.length) ? DB.tgt.filter(r => ok('tgt', r, 'month')) : [];
+  Pn = DB.prod.filter(r => ok('prod', r, 'month'));
+  CUR = F.month.length ? F.month.reduce((a, m) => m > a ? m : a, '') : Cn.reduce((a, r) => r.m > a ? r.m : a, '');
+  PREV = prevKey(CUR);
+  renderChips(); applyFilterUI(); renderReps(); renderKPIs(); renderCharts(); renderTables();
+}
+function applyFilterUI() {
+  document.getElementById('fGrid').classList.toggle('hidden', FCOL);
+  document.getElementById('fHint').classList.toggle('hidden', FCOL);
+  const n = Object.keys(DIMS).filter(k => F[k].length).length;
+  document.getElementById('fToggle').textContent = (FCOL ? '▸ Show filters' : '▾ Hide filters') + (n ? ' (' + n + ' active)' : '');
+  if (FCOL && OPEN) OPEN = null;
+}
+function toggleFilters() { FCOL = !FCOL; applyFilterUI(); }
+function renderChips() {
+  const labels = { city:'City', month:'Month', zsm:'ZSM', sm:'SM', asm:'ASM', rep:'Rep', town:'Town', grp:'Group' };
+  document.getElementById('chips').innerHTML = Object.keys(labels).filter(k => F[k].length).map(k => {
+    const t = F[k].length <= 2 ? F[k].map(v => msLab(k, v)).join(', ') : F[k].length + ' selected';
+    return '<button onclick="F.' + k + '=[];update()" class="bg-blue-50 text-blue-700 px-2 py-1 rounded-full font-medium">' + labels[k] + ': ' + esc(t) + ' ✕</button>'; }).join('');
+  applyFilterUI();
+}
+
+/* ================= REP SCORECARD (front page) ================= */
+const NEXT_LV = { zsm:'sm', sm:'asm', asm:'rep' };
+const PARENT_LV = { rep:'asm', asm:'sm', sm:'zsm' };
+const LV_LABEL = { zsm:['ZSM','ZSMs'], sm:['SM','SMs'], asm:['ASM','ASMs'], rep:['Rep','reps'] };
+function setLevel(l) { LV = l; PAGE.reps = 12; renderReps(); }
+function drillDown() { if (NEXT_LV[LV || 'rep']) { LV = NEXT_LV[LV || 'rep']; PAGE.reps = 12; renderReps(); } }
+function pickLvl(name) {
+  const lv = LV || 'rep';
+  F[lv] = F[lv].includes(name) ? F[lv].filter(x => x !== name) : [...F[lv], name];
+  update();
+}
+function renderReps() {
+  const lv = LV || 'rep', key = r => r[lv] || 'Unassigned';
+  // Every filter applies except month and the level being shown, so all siblings stay visible and one can be picked.
+  const C = DB.cust.filter(r => ok('cust', r, ['month', lv]));
+  const T = (!F.city.length && !F.town.length) ? DB.tgt.filter(r => ok('tgt', r, ['month', lv])) : [];
+  const tm = new Map(), sample = new Map(), kids = new Map(), cities = new Map();
+  const note = r => { const k = key(r); if (!sample.has(k)) sample.set(k, r); if (!kids.has(k)) kids.set(k, new Set()); kids.get(k).add(r.rep); if (!cities.has(k)) cities.set(k, new Set()); cities.get(k).add(r.city); };
+  C.forEach(note);
+  T.forEach(r => { if (inP(r.m)) { const k = key(r); tm.set(k, (tm.get(k) || 0) + r.t); note(r); } });
+  const reps = group(key, C);
+  tm.forEach((t, k) => { if (!reps.find(o => o.k === k)) reps.push({ k, tot:0, cur:0, prev:0, cs:new Set(), ct:new Set() }); });
+  const rows = reps.map(o => { const t = tm.get(o.k) || 0; return { o, t, p: t ? o.tot / t : null, g: o.prev ? o.cur / o.prev - 1 : null }; });
+  const S = SORTR;
+  rows.sort((a, b) => S === 'name' ? a.o.k.localeCompare(b.o.k)
+    : S === 'ach' ? (b.p == null ? -1 : b.p) - (a.p == null ? -1 : a.p)
+    : S === 'growth' ? (b.g == null ? -9 : b.g) - (a.g == null ? -9 : a.g)
+    : b.o.tot - a.o.tot);
+  document.getElementById('lvPills').innerHTML = [['zsm','ZSM'],['sm','SM'],['asm','ASM'],['rep','Rep']].map(l =>
+    '<button onclick="setLevel(\'' + l[0] + '\')" class="px-3 py-1.5 rounded-md ' + (l[0] === lv ? 'bg-white shadow text-blue-600' : 'text-slate-500 hover:text-slate-800') + '">' + l[1] + '</button>').join('');
+  const per = perTxt();
+  document.getElementById('repSub').textContent = rows.length + ' ' + LV_LABEL[lv][1] + ', net sales against target for ' + per + '. Click cards to select one or several; the whole dashboard follows.';
+  const dr = document.getElementById('repDrill');
+  if (F[lv].length && NEXT_LV[lv]) { dr.textContent = 'Show their ' + LV_LABEL[NEXT_LV[lv]][1] + ' ▸'; dr.classList.remove('hidden'); } else dr.classList.add('hidden');
+  document.getElementById('repSort').value = SORTR;
+  const grid = document.getElementById('repGrid');
+  if (!rows.length) { grid.innerHTML = '<p class="col-span-full text-center text-slate-400 text-sm py-8">No ' + LV_LABEL[lv][1] + ' match the current filters.</p>'; document.getElementById('repMore').innerHTML = ''; return; }
+  grid.innerHTML = rows.slice(0, PAGE.reps).map((x, i) => {
+    const o = x.o, sel = F[lv].includes(o.k), p = x.p, sm = sample.get(o.k);
+    const col = p == null ? ['bg-slate-300','text-slate-400','No target'] : p >= 1 ? ['bg-emerald-500','text-emerald-600','On target'] : p >= .8 ? ['bg-amber-500','text-amber-600','Close'] : ['bg-rose-500','text-rose-600','Behind'];
+    const w = p == null ? 0 : Math.min(p, 1.5) / 1.5 * 100;
+    const nk = (kids.get(o.k) || new Set()).size, cs = [...(cities.get(o.k) || [])].join(', ');
+    const sub = lv === 'rep' ? cs : nk + ' rep' + (nk === 1 ? '' : 's') + ' · ' + cs;
+    const up = PARENT_LV[lv] && sm ? LV_LABEL[PARENT_LV[lv]][0] + ': ' + sm[PARENT_LV[lv]] : '';
+    return '<div onclick="pickLvl(decodeURIComponent(\'' + enc(o.k) + '\'))" class="repcard cursor-pointer rounded-xl border p-5 ' + (sel ? 'border-blue-500 ring-2 ring-blue-200 bg-blue-50' : 'border-slate-200 bg-white hover:border-blue-300') + '">'
+      + '<div class="flex items-start justify-between gap-3">'
+      + '<div class="flex items-start gap-3 min-w-0"><span class="shrink-0 mt-0.5 w-7 h-7 rounded-full bg-slate-900 text-white text-xs font-bold flex items-center justify-center">' + (i + 1) + '</span>'
+      + '<div class="min-w-0"><div class="font-bold text-[15px] leading-snug text-slate-900 break-words">' + esc(o.k) + '</div>'
+      + '<div class="text-xs text-slate-500 mt-1 leading-snug break-words">' + esc(sub) + '</div>'
+      + (up ? '<div class="text-xs text-slate-400 mt-0.5 leading-snug break-words">' + esc(up) + '</div>' : '') + '</div></div>'
+      + '<div class="text-right shrink-0"><div class="text-2xl font-bold leading-none ' + col[1] + '">' + (p == null ? '—' : (p * 100).toFixed(0) + '%') + '</div><div class="text-xs text-slate-400 mt-1.5">' + col[2] + '</div></div></div>'
+      + '<div class="mt-4 h-2 bg-slate-200 rounded-full overflow-hidden relative"><div class="bar h-2 rounded-full ' + col[0] + '" style="width:' + w + '%"></div><div class="absolute top-0 bottom-0 w-px bg-slate-500/60" style="left:' + (1 / 1.5 * 100) + '%"></div></div>'
+      + '<div class="mt-4 grid grid-cols-2 gap-x-4 gap-y-3">'
+      + '<div><div class="text-xs text-slate-400">Net sales</div><div class="text-sm font-semibold text-slate-800 mt-0.5">' + money(o.tot) + '</div></div>'
+      + '<div><div class="text-xs text-slate-400">Target</div><div class="text-sm font-semibold text-slate-800 mt-0.5">' + (x.t ? money(x.t) : '—') + '</div></div>'
+      + '<div><div class="text-xs text-slate-400">Pharmacies</div><div class="text-sm font-semibold text-slate-800 mt-0.5">' + o.cs.size + '</div></div>'
+      + '<div><div class="text-xs text-slate-400">vs last month</div><div class="text-sm mt-0.5">' + chg(x.g) + '</div></div></div></div>';
+  }).join('');
+  document.getElementById('repMore').innerHTML = rows.length > PAGE.reps
+    ? '<button onclick="PAGE.reps+=12;renderReps()" class="text-xs font-semibold text-blue-600 hover:underline">Show more (' + (rows.length - PAGE.reps) + ' left)</button>'
+    : (PAGE.reps > 12 ? '<button onclick="PAGE.reps=12;renderReps()" class="text-xs font-semibold text-slate-500 hover:underline">Show fewer</button>' : '');
+}
+
+function renderKPIs() {
+  let sales = 0, cur = 0, prev = 0, tg = 0, units = 0, uc = 0, up = 0; const cs = new Set(), byP = {};
+  for (const r of Cn) { if (inP(r.m)) { sales += r.s; if (r.s) cs.add(r.id); } if (r.m === CUR) cur += r.s; if (r.m === PREV) prev += r.s; }
+  for (const r of Tn) if (inP(r.m)) tg += r.t;
+  for (const r of Pn) { if (inP(r.m)) { units += r.q; byP[r.name] = (byP[r.name] || 0) + r.q; } if (r.m === CUR) uc += r.q; if (r.m === PREV) up += r.q; }
+  const top = Object.entries(byP).sort((a, b) => b[1] - a[1])[0];
+  const p = tg ? sales / tg : null, g = prev ? cur / prev - 1 : null, ug = up ? uc / up - 1 : null, per = cap(perTxt());
+  const card = (t, v, sub, c, vc) => '<div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 border-l-4 ' + c + '"><div class="text-slate-500 text-xs font-medium">' + t + '</div><div class="font-bold mt-2 min-h-[2rem] flex items-center ' + (vc || 'text-2xl') + '">' + v + '</div><div class="text-[10px] text-slate-400 mt-1">' + sub + '</div></div>';
+  document.getElementById('kpis').innerHTML =
+    card('Net Sales', money(sales), per, 'border-l-blue-500') +
+    card('Target', tg ? money(tg) : '—', (F.city.length || F.town.length) ? 'Targets are set per rep, not per city or town' : 'Rep targets for the period', 'border-l-slate-400') +
+    card('Achievement', p == null ? '—' : '<span class="' + (p >= 1 ? 'text-emerald-600' : p >= .8 ? 'text-amber-600' : 'text-rose-600') + '">' + (p*100).toFixed(0) + '%</span>', 'Net sales ÷ target', 'border-l-emerald-500') +
+    card('Change vs Last Month', chg(g), CUR ? 'Net sales, ' + mLabel(CUR) + ' vs ' + mLabel(PREV) : '—', 'border-l-teal-500') +
+    card('Units Sold', full(units), chg(ug) + ' <span>vs last month (' + (CUR ? mLabel(CUR) : '—') + ')</span>', 'border-l-indigo-500') +
+    card('Top Product by Units', top ? esc(top[0]) : '—', top ? full(top[1]) + ' units, ' + per : '', 'border-l-pink-500', 'text-base leading-snug') +
+    card('Pharmacies Billed', full(cs.size), 'Customers with sales, as on Board', 'border-l-purple-500') +
+    card('Avg Sale per Pharmacy', cs.size ? money(sales / cs.size) : '—', per, 'border-l-amber-500');
+}
+
+/* ================= CHARTS ================= */
+const PALETTE = ['#3b82f6','#10b981','#8b5cf6','#f59e0b','#ec4899','#64748b','#14b8a6','#ef4444','#84cc16','#06b6d4'];
+const BASE = { responsive:true, maintainAspectRatio:false };
+function mk(id, cfg) { if (charts[id]) charts[id].destroy(); charts[id] = new Chart(document.getElementById(id).getContext('2d'), cfg); }
+function dough(id, obj, onClick, fmtFn) {
+  const e = Object.entries(obj).sort((a, b) => b[1] - a[1]);
+  mk(id, { type:'doughnut', data:{ labels:e.map(x => x[0]), datasets:[{ data:e.map(x => x[1]), backgroundColor:PALETTE }] },
+    options:{ ...BASE, plugins:{ legend:{ position:'bottom', labels:{ boxWidth:10, font:{size:10} } }, tooltip:{ callbacks:{ label:c => c.label + ': ' + (fmtFn || money)(c.parsed) } } },
+      onClick:(ev, els, ch) => { if (onClick && els.length) onClick(ch.data.labels[els[0].index]); } } });
+}
+function hbar(id, entries, color, onClick, fmt, tk) {
+  mk(id, { type:'bar', data:{ labels:entries.map(x => x[0]), datasets:[{ data:entries.map(x => x[1]), backgroundColor:entries.map(x => F.rep.includes(x[0]) ? '#047857' : color), borderRadius:6 }] },
+    options:{ ...BASE, indexAxis:'y', plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:c => (fmt || money)(c.parsed.x) } } }, scales:{ x:{ ticks:{ callback:tk || tick } } },
+      onClick:(ev, els, ch) => { if (onClick && els.length) onClick(ch.data.labels[els[0].index]); } } });
+}
+function renderCharts() {
+  const ms = [...new Set([...Cn.map(r => r.m), ...Tn.map(r => r.m)])].sort();
+  const S = sumBy(Cn, r => r.m, r => r.s), T = sumBy(Tn, r => r.m, r => r.t);
+  mk('cTrend', { type:'bar', data:{ labels:ms.map(mLabel), datasets:[
+    { type:'bar', label:'Net sales', data:ms.map(m => S[m] || 0), backgroundColor:ms.map(m => F.month.includes(m) ? '#1d4ed8' : '#60a5fa'), borderRadius:6, order:2 },
+    { type:'line', label:'Target', data:ms.map(m => T[m] || 0), borderColor:'#f59e0b', borderDash:[5,5], borderWidth:2, tension:.2, pointRadius:3, order:1 } ] },
+    options:{ ...BASE, plugins:{ legend:{ position:'top', labels:{ boxWidth:12, font:{size:11} } }, tooltip:{ callbacks:{ label:c => c.dataset.label + ': ' + money(c.parsed.y) } } }, scales:{ y:{ ticks:{ callback:tick } } },
+      onClick:(ev, els) => { if (els.length) setFilter('month', ms[els[0].index]); } } });
+
+  const per = Cn.filter(r => inP(r.m));
+  dough('cCity', sumBy(per, r => r.city, r => r.s), v => setFilter('city', v));
+  hbar('cRep', Object.entries(sumBy(per, r => r.rep, r => r.s)).sort((a, b) => b[1] - a[1]).slice(0, 10), '#3b82f6', v => setFilter('rep', v));
+
+  const sl = { 'Above Rs 1,00,000':0, 'Rs 50,000 to 1,00,000':0, 'Rs 25,000 to 50,000':0, 'Below Rs 25,000':0 };
+  group(r => r.id).forEach(o => { if (o.cur > 0) sl[o.cur >= 1e5 ? 'Above Rs 1,00,000' : o.cur >= 5e4 ? 'Rs 50,000 to 1,00,000' : o.cur >= 2.5e4 ? 'Rs 25,000 to 50,000' : 'Below Rs 25,000']++; });
+  document.getElementById('slabTitle').textContent = 'Pharmacies by Monthly Sales, ' + (CUR ? mLabel(CUR) : '—');
+  dough('cSlab', sl, null, v => v + ' pharmacies');
+
+  const P = DB.prod.filter(r => ok('prod', r));
+  hbar('cProd', Object.entries(sumBy(P, r => r.name, r => r.q)).sort((a, b) => b[1] - a[1]).slice(0, 10), '#10b981', null, v => full(v) + ' units', v => v);
+  dough('cGrp', sumBy(P, r => r.grp, r => r.q), v => setFilter('grp', v), v => full(v) + ' units');
+}
+
+/* ================= TABLES ================= */
+function card(tab, title, sub, cols, rows, extra) {
+  const n = rows.length, lim = PAGE[tab];
+  return '<div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden"><div class="p-4 border-b border-slate-100 flex flex-wrap justify-between items-center gap-2 bg-slate-50/50"><div><h3 class="text-sm font-bold">' + title + '</h3><p class="text-xs text-slate-500">' + sub + '</p></div><div class="flex items-center gap-2">' + (extra || '') + '<span class="text-xs font-semibold bg-slate-200 px-2.5 py-1 rounded-md">' + n + ' records</span></div></div>'
+    + '<div class="tblfull scroll"><table class="w-full text-left text-xs text-slate-600"><thead class="bg-slate-100 text-slate-700 font-semibold text-[11px]"><tr>' + cols.map(c => '<th class="p-3 ' + (c[1] === 'r' ? 'text-right' : '') + ' ' + (c[2] || 'bg-slate-100') + '">' + c[0] + '</th>').join('') + '</tr></thead><tbody class="divide-y divide-slate-100">'
+    + (n ? rows.slice(0, lim).map(r => '<tr class="hover:bg-slate-50 ' + (r.on ? 'cursor-pointer' : '') + '"' + (r.on ? ' onclick="' + r.on + '"' : '') + '>' + r.c.map((c, i) => '<td class="p-3 ' + (cols[i][1] === 'r' ? 'text-right' : '') + ' ' + (cols[i][3] || '') + '">' + c + '</td>').join('') + '</tr>').join('') : '<tr><td colspan="' + cols.length + '" class="p-8 text-center text-slate-400">No matching records.</td></tr>')
+    + '</tbody></table></div>' + (n > lim ? '<div class="p-3 text-center"><button onclick="PAGE.' + tab + '+=100;renderTables()" class="text-xs font-semibold text-blue-600 hover:underline">Show more</button></div>' : '') + '</div>';
+}
+function renderTables() {
+  const per = perTxt(), cm = CUR ? mLabel(CUR) : '—', pm = PREV ? mLabel(PREV) : '—';
+
+  // Customers: one row per pharmacy, Jan to Dec of the year being checked
+  const yrs = [...new Set(Cn.map(r => r.m.slice(0, 4)))].sort();
+  const yr = (YR && yrs.includes(YR)) ? YR : (CUR ? CUR.slice(0, 4) : (yrs[yrs.length - 1] || ''));
+  const hl = new Set(F.month.length ? F.month : (CUR ? [CUR] : []));
+  const cmap = new Map();
+  for (const r of Cn) {
+    let o = cmap.get(r.id); if (!o) { o = { r, mm:new Array(12).fill(0), yt:0, cur:0, prev:0 }; cmap.set(r.id, o); }
+    if (r.m === CUR) o.cur += r.s; if (r.m === PREV) o.prev += r.s;
+    if (r.m.slice(0, 4) === yr) { o.mm[+r.m.slice(5) - 1] += r.s; o.yt += r.s; }
+  }
+  const cg = [...cmap.values()].filter(o => o.yt > 0 || o.cur > 0 || o.prev > 0).map(o => ({ o, g:o.prev ? o.cur / o.prev - 1 : null }));
+  cg.sort((a, b) => SORT === 'sales' ? b.o.yt - a.o.yt : SORT === 'gain' ? (b.g == null ? -9 : b.g) - (a.g == null ? -9 : a.g) : (a.g == null ? 9 : a.g) - (b.g == null ? 9 : b.g));
+  const isHl = i => hl.has(yr + '-' + String(i + 1).padStart(2, '0'));
+  const cr = cg.map(({ o, g }) => { const s = o.cur > 0 && o.prev <= 0 ? ['New','emerald'] : o.cur <= 0 && o.prev > 0 ? ['Lost','rose'] : o.cur <= 0 ? ['Inactive','slate'] : g <= -.2 ? ['Declining','amber'] : g >= .2 ? ['Growing','blue'] : ['Stable','slate'];
+    return { on:"openCust(decodeURIComponent('" + enc(o.r.id) + "'))",
+      c:['<b class="text-slate-900">' + esc(o.r.name) + '</b>' + (o.r.t === 'X' ? ' <span class="ml-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 text-[10px] font-semibold">External</span>' : '') + '<span class="block text-[10px] text-slate-400">' + esc(o.r.code) + '</span>']
+        .concat(o.mm.map(v => v ? full(v) : '<span class="text-slate-300">–</span>'))
+        .concat(['<b class="text-slate-900">' + full(o.yt) + '</b>', chg(g), badge(s[0], s[1])]) }; });
+  const MH = MN.map((m, i) => [m, 'r', isHl(i) ? 'bg-blue-100 text-blue-800' : '', isHl(i) ? 'bg-blue-50 font-semibold text-blue-900' : '']);
+  const cc = [['Pharmacy', '', 'sticky left-0 bg-slate-100', 'sticky left-0 bg-white min-w-[200px]']].concat(MH).concat([[yr + ' total', 'r', 'bg-amber-100 text-amber-900', 'bg-amber-50'], ['Change', 'r'], ['Status']]);
+  const pills = yrs.length > 1 ? '<div class="flex bg-slate-100 rounded-lg p-0.5 text-xs font-semibold">' + yrs.map(y => '<button onclick="YR=\'' + y + '\';renderTables()" class="px-2.5 py-1 rounded-md ' + (y === yr ? 'bg-white shadow text-blue-600' : 'text-slate-500') + '">' + y + '</button>').join('') + '</div>' : '';
+  const sel = pills + '<select onchange="SORT=this.value;renderTables()" class="text-xs bg-white border border-slate-200 rounded-lg px-2 py-1"><option value="drop"' + (SORT === 'drop' ? ' selected' : '') + '>Biggest drop first</option><option value="gain"' + (SORT === 'gain' ? ' selected' : '') + '>Biggest gain first</option><option value="sales"' + (SORT === 'sales' ? ' selected' : '') + '>Highest sales first</option></select>';
+  const hlTxt = [...hl].filter(k => k.slice(0, 4) === yr).sort().map(mLabel).join(', ');
+  document.getElementById('tab-cust').innerHTML = card('cust', 'Customers, ' + yr, 'Month-wise net sales for ' + yr + (hlTxt ? ', highlighted: ' + hlTxt : '') + '. Status compares ' + cm + ' with ' + pm + '. Click a pharmacy for its product-wise units.', cc, cr, sel);
+
+  // Towns
+  const tg = group(r => r.town + '|' + r.city).filter(o => o.tot > 0 || o.cur > 0).sort((a, b) => b.tot - a.tot), tt = tg.reduce((s, o) => s + o.tot, 0) || 1;
+  const tr = tg.map(o => { const g = o.prev ? o.cur / o.prev - 1 : null, sh = o.tot / tt;
+    return { c:['<b class="text-slate-900">' + esc(o.r.town) + '</b>', esc(o.r.city), o.cs.size, full(o.tot), '<div class="flex items-center gap-2"><div class="w-24 h-1.5 bg-slate-200 rounded"><div class="h-1.5 rounded bg-blue-500" style="width:' + Math.min(sh*400, 100) + '%"></div></div><span>' + (sh*100).toFixed(1) + '%</span></div>', chg(g)] }; });
+  const tcols = [['Town / area'], ['City'], ['Pharmacies billed','r'], ['Net sales','r'], ['Share'], ['Change vs last month','r']];
+  document.getElementById('tab-towns').innerHTML = card('towns', 'Sales by Town', 'Net sales for ' + per + '. Share is of the towns listed.', tcols, tr);
+}
+
+/* ================= PHARMACY PRODUCT-WISE VIEW ================= */
+function openCust(id) {
+  const c = Cn.find(r => r.id === id) || DB.cust.find(r => r.id === id); if (!c) return;
+  const ext = c.t === 'X';
+  document.getElementById('cmTitle').textContent = c.name;
+  document.getElementById('cmSub').textContent = c.town + ', ' + c.city + '. Rep: ' + c.rep + '. Code ' + c.code + (ext ? ' (external chain sales)' : '');
+  document.getElementById('cmBody').innerHTML = '<p class="p-10 text-center text-slate-400 text-sm">Loading product-wise units…</p>';
+  document.getElementById('cmodal').classList.remove('hidden');
+  window.CD = { id: id, code: c.code, ext: ext };
+  if (ext) { renderCust([]); return; }
+  const done = rows => renderCust(rows);
+  if (DEMO) { setTimeout(() => done(demoCustProducts(id)), 120); return; }
+  google.script.run.withSuccessHandler(done).withFailureHandler(err => {
+    const m = String(err && err.message || err);
+    if (/expired|denied/i.test(m)) logout(m); else document.getElementById('cmBody').innerHTML = '<p class="p-10 text-center text-rose-600 text-sm">' + esc(m) + '</p>';
+  }).getCustomerProducts(SESSION, c.code, c.city);
+}
+function closeCust() { document.getElementById('cmodal').classList.add('hidden'); }
+function renderCust(rows) {
+  const M = new Map(), CD = window.CD || {};
+  rows.forEach(r => { let o = M.get(r.pc); if (!o) { o = { pc:r.pc, name:r.name, grp:r.grp, q:0, cu:0, pu:0 }; M.set(r.pc, o); }
+    if (inP(r.m)) o.q += r.q; if (r.m === CUR) o.cu += r.q; if (r.m === PREV) o.pu += r.q; });
+  const list = [...M.values()].filter(o => o.q || o.cu || o.pu).sort((a, b) => b.q - a.q);
+  const tq = list.reduce((a, o) => a + o.q, 0), per = cap(perTxt());
+  const val = DB.cust.filter(r => r.id === CD.id && inP(r.m)).reduce((a, r) => a + r.s, 0);
+  const cm = CUR ? mLabel(CUR) : '—', pm = PREV ? mLabel(PREV) : '—';
+  const cols = [['Product'], ['Group'], ['Units','r'], ['Share of units','r'], ['Units ' + cm,'r'], ['Units ' + pm,'r'], ['Unit change','r']];
+  const rr = list.map(o => { const g = o.pu ? o.cu / o.pu - 1 : null, sh = tq ? o.q / tq * 100 : 0;
+    return { c:['<b class="text-slate-900">' + esc(o.name) + '</b><span class="text-[10px] text-slate-400 block">' + esc(o.pc) + '</span>', esc(o.grp), full(o.q), sh.toFixed(1) + '%', full(o.cu), full(o.pu), chg(g)] }; });
+  const stat = (t, v) => '<div class="p-3 border-r border-slate-100 last:border-0"><div class="text-[11px] text-slate-500">' + t + '</div><div class="text-lg font-bold">' + v + '</div></div>';
+  const empty = CD.ext ? 'This pharmacy is a chain customer billed outside the invoice data, so product-wise units are not available. Its net sales come from the SalesExternal sheet.' : 'No invoice lines for this pharmacy in the units data.';
+  document.getElementById('cmBody').innerHTML =
+    '<div class="grid grid-cols-3 border-b border-slate-100">' + stat('Net sales, ' + per, money(val)) + stat('Units, ' + per, CD.ext ? '—' : full(tq)) + stat('Products bought', CD.ext ? '—' : list.length) + '</div>'
+    + '<table class="w-full text-left text-xs text-slate-600"><thead class="bg-slate-100 text-slate-700 font-semibold text-[11px] sticky top-0"><tr>' + cols.map(c => '<th class="p-3 ' + (c[1] === 'r' ? 'text-right' : '') + '">' + c[0] + '</th>').join('') + '</tr></thead><tbody class="divide-y divide-slate-100">'
+    + (rr.length ? rr.map(r => '<tr class="hover:bg-slate-50">' + r.c.map((c, i) => '<td class="p-3 ' + (cols[i][1] === 'r' ? 'text-right' : '') + '">' + c + '</td>').join('') + '</tr>').join('') : '<tr><td colspan="7" class="p-8 text-center text-slate-400">' + empty + '</td></tr>') + '</tbody></table>'
+    + '<p class="p-3 text-[11px] text-slate-400">Net sales here come from your sales sheet. Units come from invoice lines.</p>';
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeCust(); if (OPEN) { OPEN = null; syncDropdowns(); } } });
+document.addEventListener('click', () => { if (OPEN) { OPEN = null; syncDropdowns(); } });
+
+/* ================= TABS ================= */
+document.querySelectorAll('.tabBtn').forEach(b => b.addEventListener('click', () => {
+  currentTab = b.dataset.tab;
+  FCOL = currentTab !== 'analytics'; document.body.classList.toggle('full', FCOL); applyFilterUI();
+  ['analytics','cust','towns','insights','chat'].forEach(t => document.getElementById('tab-' + t).classList.toggle('hidden', t !== currentTab));
+  document.querySelectorAll('.tabBtn').forEach(x => x.className = 'tabBtn py-3 px-1 whitespace-nowrap ' + (x === b ? 'tab-active' : 'text-slate-500'));
+  if (currentTab === 'analytics') Object.values(charts).forEach(c => c.resize());
+  if (currentTab === 'insights' && !INS) loadInsights(false);
+  if (currentTab === 'chat') { renderChat(); $('chatIn').focus(); }
+}));
+
+/* ================= DEMO DATA (only used when not inside Apps Script) ================= */
+const DEMO_PRODS = [['VBC','Vita-B Complex 30s','Alpha',978],['GWS','GrowWell Syrup 120ml','Alpha',640],['B12','B12 Boost 30s','Alpha',520],['ZAS','Zinc Active Sachet','Alpha',720],['MGD','Multi Gold 30s','Alpha',810],
+    ['IPS','IronPlus Syrup 120ml','Beta',416],['ZCS','Zesty-C Syrup 120ml','Beta',501],['CD3','Calci-D3 60s','Beta',690],['ZNC','ZincCare Syrup','Beta',380],
+    ['COL','Collagen Jar','Gamma',3400],['WVT','Women Vital 30s','Gamma',864],['OME','Omega Softgel','Gamma',1250]];
+function demoData(sess) {
+  let s = 11; const rnd = () => (s = s * 16807 % 2147483647) / 2147483647, pick = a => a[Math.floor(rnd() * a.length)];
+  const months = [1,2,3,4,5,6,7,8,9].map(i => '2026-' + String(i).padStart(2, '0'));
+  const geo = { Northgate:{ towns:['Market Square','Park Lane','Old Quarter','Station Road','Mill Street'], reps:['Hamza Qureshi','Sana Mirza','Vacant (North 3)'] },
+    Riverside:{ towns:['Harbour Road','Church Lane','Rail Yard','Orchard Road'], reps:['Danish Malik','Vacant (East 2)'] },
+    Hillview:{ towns:['High Street','Court Road','Green Acres'], reps:['Ayesha Noor'] }, Lakeside:{ towns:['Civic Centre','Bridge Road','Lakeview'], reps:['Faraz Aslam'] } };
+  const names = ['Alpha','Bright','Carewell','Dawn','Evergreen','Family','Greenleaf','Harmony','Lifeline','Medico','Noor','Prime','Rose','Sunrise','Trust','Unity'];
+  const prods = DEMO_PRODS;
+  const cust = [], prod = [], tgt = [], rs = {}, rd = {}; let code = 1000;
+  for (const city in geo) { const g = geo[city], n = 28 + Math.floor(rnd() * 14);
+    for (let i = 0; i < n; i++) { code++; const town = pick(g.towns), rep = pick(g.reps), name = pick(names) + ' Pharmacy' + (rnd() < .4 ? ', ' + town : ''), base = 8000 + Math.pow(rnd(), 2.2) * 420000, tr = .97 + rnd() * .1, late = rnd() < .1 ? 3 : 0;
+      months.forEach((m, mi) => { if (mi < late || (mi === 8 && Number(code) % 9 === 0)) return; const v = rnd() < .1 ? 0 : Math.round(base * Math.pow(tr, mi) * (.65 + rnd() * .7) * (rep === 'Hamza Qureshi' && mi === 8 ? .42 : 1)); if (!v) return;
+        cust.push({ m, rep, city, town, id:String(code), code:String(code), name, s:v, t:'D' }); const k = m + '|' + rep + '|' + city; rs[k] = (rs[k] || 0) + v; rd[k] = (rd[k] || 0) + v; }); } }
+  [['HOS','Central Hospital Pharmacy','Northgate'],['HOS','Riverside Clinic Pharmacy','Riverside'],['CHN','Northgate Chain Store 1','Northgate'],['CHN','Riverside Chain Store 2','Riverside'],['INS','Lakeside Institutional Supply','Lakeside']].forEach(c => {
+    const rep = pick(geo[c[2]].reps), town = pick(geo[c[2]].towns);
+    months.forEach(m => { const v = Math.round(150000 + rnd() * 500000); cust.push({ m, rep, city:c[2], town, id:'X|' + c[1], code:c[0], name:c[1], s:v, t:'X' }); const k = m + '|' + rep + '|' + c[2]; rs[k] = (rs[k] || 0) + v; }); });
+  const ra = {}, rn = {}; for (const k in rs) { const [m, rep, city] = k.split('|'), kk = rep + '|' + city; ra[kk] = (ra[kk] || 0) + rs[k]; rn[kk] = (rn[kk] || 0) + 1; }
+  for (const k in rs) { const [m, rep, city] = k.split('|'), kk = rep + '|' + city; tgt.push({ m, rep, city, t:Math.round(ra[kk] / rn[kk] * (1.03 + rnd() * .1) / 10000) * 10000 }); }
+  const pw = {}; for (const k in rd) { const [m, rep, city] = k.split('|'), kk = rep + '|' + city; pw[kk] = pw[kk] || prods.map(() => Math.pow(rnd(), 2) + .05); const w = pw[kk].map(x => x * (.88 + rnd() * .24)), W = w.reduce((a, b) => a + b, 0);
+    prods.forEach((p, i) => { const q = Math.round(rd[k] * w[i] / W / (p[3] * .88) * (m === '2026-09' ? (p[0] === 'OME' ? 1.4 : p[0] === 'CD3' ? .62 : 1) : 1)); prod.push({ m, rep, city, code:p[0], name:p[1], grp:p[2], q }); }); }
+  const HI = [['Hamza Qureshi','Northgate','Omar Siddiqui','Rabia Hashmi','Imran Zafar'],['Sana Mirza','Northgate','Omar Siddiqui','Rabia Hashmi','Imran Zafar'],['Vacant (North 3)','Northgate','Kamran Javed','Rabia Hashmi','Imran Zafar'],
+    ['Danish Malik','Riverside','Nida Karim','Tahir Mehdi','Imran Zafar'],['Vacant (East 2)','Riverside','Nida Karim','Tahir Mehdi','Imran Zafar'],['Ayesha Noor','Hillview','Kamran Javed','Rabia Hashmi','Imran Zafar'],['Faraz Aslam','Lakeside','Nida Karim','Tahir Mehdi','Imran Zafar']]
+    .map(a => ({ rep:a[0], city:a[1], asm:a[2], sm:a[3], zsm:a[4] }));
+  const nm = String(sess || '').replace(/^demo:/, '').trim(), lc = nm.toLowerCase();
+  let role = 'ADMIN', who = nm || 'Zone Head', keep = () => true;
+  if (/^rep/.test(lc)) { role = 'REP'; who = 'Hamza Qureshi'; keep = h => h.rep === who; }
+  else if (/^zsm/.test(lc)) { role = 'ZSM'; who = 'Imran Zafar'; keep = h => h.zsm === who; }
+  else if (/^asm/.test(lc)) { role = 'ASM'; who = 'Omar Siddiqui'; keep = h => h.asm === who; }
+  else if (/^sm/.test(lc)) { role = 'SM'; who = 'Rabia Hashmi'; keep = h => h.sm === who; }
+  const hier = HI.filter(keep), set = new Set(hier.map(h => h.rep)), f = r => set.has(r.rep);
+  return { zone:'Northern Zone (Demo)', user:{ name:who, role }, updated:'demo', cust:cust.filter(f), prod:prod.filter(f), tgt:tgt.filter(f), hier };
+}
+function demoCustProducts(id) {
+  let s = 7; for (const ch of String(id)) s = (s * 31 + ch.charCodeAt(0)) % 2147483647; s = s || 7;
+  const rnd = () => (s = s * 16807 % 2147483647) / 2147483647;
+  const chosen = DEMO_PRODS.slice().sort(() => rnd() - .5).slice(0, 3 + Math.floor(rnd() * 6)), w = chosen.map(() => .15 + rnd()), W = w.reduce((a, b) => a + b, 0), out = [];
+  DB.cust.filter(r => r.id === id && r.s > 0).forEach(r => chosen.forEach((p, i) => { const sv = r.s * w[i] / W * (.85 + rnd() * .3); out.push({ m:r.m, pc:p[0], name:p[1], grp:p[2], q:Math.round(sv / (p[3] * .88)) }); }));
+  return out;
+}
+
+/* ================= AI INSIGHTS + CHAT ================= */
+let INS = null, INS_BUSY = false, CHAT = [], CHAT_BUSY = false;
+const $ = id => document.getElementById(id);
+const SEV = { high:['High','rose'], medium:['Medium','amber'], low:['Low','blue'], info:['Note','slate'], good:['Good news','emerald'] };
+const SEV_BAR = { high:'border-rose-400', medium:'border-amber-400', low:'border-blue-300', info:'border-slate-300', good:'border-emerald-400' };
+const SUGGEST = ['Which reps are furthest below target this month?', 'Which pharmacies stopped buying recently?', 'Which products are growing fastest?', 'Summarise this month in 5 lines for my review meeting'];
+const inl = s => s.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+function md(t) {
+  let out = '', ul = false;
+  esc(t).split(/\r?\n/).forEach(l => {
+    const b = l.match(/^\s*[-*•]\s+(.*)$/);
+    if (b) { if (!ul) { out += '<ul class="list-disc pl-5 space-y-1 my-1">'; ul = true; } out += '<li>' + inl(b[1]) + '</li>'; }
+    else { if (ul) { out += '</ul>'; ul = false; } if (l.trim()) out += '<p class="my-1">' + inl(l) + '</p>'; }
+  });
+  return out + (ul ? '</ul>' : '');
+}
+const errMsg = err => String(err && err.message || err).replace(/^Error:\s*/, '');
+
+/* ---- Insights ---- */
+function loadInsights(force) {
+  if (!SESSION || INS_BUSY) return;
+  INS_BUSY = true;
+  $('insBody').innerHTML = '<div class="bg-white rounded-xl border border-slate-200 p-10 text-center"><div class="w-7 h-7 mx-auto border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div><p class="text-sm text-slate-500 mt-3">Checking your sales for anything unusual…</p></div>';
+  const done = r => { INS_BUSY = false; INS = r; renderInsights(); };
+  const fail = err => {
+    INS_BUSY = false; const m = errMsg(err);
+    if (/expired|denied/i.test(m)) { logout(m); return; }
+    $('insBody').innerHTML = '<div class="bg-rose-50 border border-rose-200 text-rose-800 rounded-xl p-5 text-sm">Could not load insights: ' + esc(m) + ' <button onclick="loadInsights()" class="underline font-semibold ml-1">Try again</button></div>';
+  };
+  if (DEMO) { setTimeout(() => done(demoInsights()), 700); return; }
+  google.script.run.withSuccessHandler(done).withFailureHandler(fail).getInsights(SESSION, !!force);
+}
+function insCard(sev, title, detail, extra) {
+  const s = SEV[sev] || SEV.low;
+  return '<div class="border-l-4 ' + (SEV_BAR[sev] || SEV_BAR.low) + ' bg-slate-50 rounded-r-lg p-3">'
+    + '<div class="flex items-start gap-2 flex-wrap">' + badge(s[0], s[1]) + '<h4 class="text-sm font-semibold leading-snug">' + esc(title) + '</h4></div>'
+    + '<p class="text-xs text-slate-600 mt-1.5 leading-relaxed">' + esc(detail) + '</p>' + (extra || '') + '</div>';
+}
+function renderInsights() {
+  const r = INS, box = $('insBody');
+  if (!r) { box.innerHTML = ''; return; }
+  if (!r.ok) { box.innerHTML = '<div class="bg-white rounded-xl border border-slate-200 p-8 text-center text-sm text-slate-500">' + esc(r.msg || 'No insights available.') + '</div>'; return; }
+  const s = r.summary || {}, ai = r.ai;
+  const kpi = (l, v, sub) => '<div class="bg-white rounded-xl border border-slate-200 p-3"><p class="text-[11px] text-slate-500">' + l + '</p><p class="text-lg font-bold leading-tight mt-0.5">' + v + '</p><p class="text-[11px] mt-0.5">' + (sub || '') + '</p></div>';
+  let h = '<div class="grid grid-cols-2 lg:grid-cols-4 gap-3">'
+    + kpi('Net sales, ' + esc(r.month), money(s.total), chg(s.chgPct == null ? null : s.chgPct / 100) + ' <span class="text-slate-400">vs ' + esc(r.prevMonth) + '</span>')
+    + kpi('Target achievement', s.achPct == null ? '—' : s.achPct + '%', s.target ? '<span class="text-slate-400">target ' + money(s.target) + '</span>' : '<span class="text-slate-400">no target set</span>')
+    + kpi('Pharmacies billed', full(s.active), '<span class="text-slate-400">' + full(s.activePrev) + ' in ' + esc(r.prevMonth) + '</span>')
+    + kpi('Data check', s.incomplete ? 'Month incomplete' : 'Looks complete', '<span class="text-slate-400">latest month filled?</span>') + '</div>';
+
+  // AI write-up
+  h += '<section class="bg-white rounded-xl border border-slate-200 p-4 sm:p-5"><div class="flex flex-wrap items-start justify-between gap-3 mb-3">'
+    + '<div><h2 class="text-base font-bold">AI summary</h2><p class="text-[11px] text-slate-400 mt-0.5">' + (r.aiAt ? 'Written ' + esc(r.aiAt) + ' · Gemini explains numbers found by the checks below' : 'Gemini explains numbers found by the checks below') + '</p></div>'
+    + '<button onclick="loadInsights(true)" class="px-3 py-1.5 text-xs font-semibold bg-slate-900 hover:bg-slate-700 text-white rounded-lg">↻ Regenerate</button></div>';
+  if (r.aiNote) h += '<p class="text-xs bg-amber-50 text-amber-800 rounded-lg p-2 mb-3">' + esc(r.aiNote) + '</p>';
+  if (r.aiError) h += '<p class="text-xs bg-rose-50 text-rose-800 rounded-lg p-2 mb-3">AI is unavailable right now: ' + esc(r.aiError) + (ai ? ' Showing the last saved write-up.' : ' The checks below still work.') + '</p>';
+  if (ai) {
+    h += '<p class="text-sm font-semibold leading-snug">' + esc(ai.headline) + '</p><p class="text-sm text-slate-600 mt-2 leading-relaxed max-w-4xl">' + esc(ai.summary) + '</p>';
+    if (ai.anomalies && ai.anomalies.length) h += '<h3 class="text-sm font-bold mt-5 mb-2">What looks unusual</h3><div class="grid grid-cols-1 xl:grid-cols-2 gap-3">'
+      + ai.anomalies.map(a => insCard(a.severity, a.title, a.detail, a.check ? '<p class="text-xs mt-1.5"><span class="font-semibold text-slate-700">Check:</span> <span class="text-slate-600">' + esc(a.check) + '</span></p>' : '')).join('') + '</div>';
+    if (ai.patterns && ai.patterns.length) h += '<h3 class="text-sm font-bold mt-5 mb-2">Sales patterns</h3><div class="grid grid-cols-1 xl:grid-cols-2 gap-3">'
+      + ai.patterns.map(p => '<div class="bg-slate-50 rounded-lg p-3"><h4 class="text-sm font-semibold">' + esc(p.title) + '</h4><p class="text-xs text-slate-600 mt-1 leading-relaxed">' + esc(p.detail) + '</p></div>').join('') + '</div>';
+    if (ai.actions && ai.actions.length) h += '<h3 class="text-sm font-bold mt-5 mb-2">Suggested actions</h3><ol class="list-decimal pl-5 space-y-1.5 text-sm text-slate-700">' + ai.actions.map(a => '<li>' + esc(a) + '</li>').join('') + '</ol>';
+    h += '<p class="text-[11px] text-slate-400 mt-4">AI can misread numbers. Treat this as a list of things to check, not a verdict.</p>';
+  } else if (!r.aiError) h += '<p class="text-sm text-slate-500">No AI write-up yet. Press Regenerate.</p>';
+  h += '</section>';
+
+  // Rule-based findings (always shown)
+  h += '<section class="bg-white rounded-xl border border-slate-200 p-4 sm:p-5"><h2 class="text-base font-bold">Checks that ran on your data</h2>'
+    + '<p class="text-[11px] text-slate-400 mt-0.5 mb-3">Plain arithmetic, no AI: each rep, city, pharmacy and product compared with last month and with its own earlier months.</p>'
+    + (r.flags && r.flags.length ? '<div class="grid grid-cols-1 xl:grid-cols-2 gap-3">' + r.flags.map(f => insCard(f.sev, f.title, f.detail)).join('') + '</div>'
+      : '<p class="text-sm text-slate-500">Nothing unusual found for ' + esc(r.month) + '.</p>') + '</section>';
+  box.innerHTML = h;
+}
+
+/* ---- Chat ---- */
+function renderChat() {
+  const box = $('chatMsgs'); if (!box) return;
+  let h = '';
+  if (!CHAT.length) {
+    h = '<div class="h-full flex flex-col items-center justify-center text-center px-4"><p class="text-sm font-semibold">Ask about your sales</p>'
+      + '<p class="text-xs text-slate-500 mt-1 max-w-md">Reps, cities, pharmacies, products, targets and trends for the last 6 months, limited to what your role can see.</p>'
+      + '<div class="flex flex-wrap justify-center gap-2 mt-4 max-w-2xl">' + SUGGEST.map((q, i) => '<button onclick="sendChat(SUGGEST[' + i + '])" class="text-xs bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-700 rounded-full px-3 py-1.5 text-left">' + esc(q) + '</button>').join('') + '</div></div>';
+  } else {
+    h = CHAT.map(m => m.role === 'user'
+      ? '<div class="flex justify-end"><div class="bg-slate-900 text-white rounded-2xl rounded-br-sm px-3.5 py-2 text-sm max-w-[85%] whitespace-pre-wrap">' + esc(m.text) + '</div></div>'
+      : '<div class="flex justify-start"><div class="' + (m.err ? 'bg-rose-50 text-rose-800' : 'bg-slate-100 text-slate-800') + ' rounded-2xl rounded-bl-sm px-3.5 py-2 text-sm max-w-[90%] leading-relaxed">' + (m.err ? esc(m.text) : md(m.text)) + '</div></div>').join('');
+    if (CHAT_BUSY) h += '<div class="flex justify-start"><div class="bg-slate-100 text-slate-500 rounded-2xl rounded-bl-sm px-3.5 py-2 text-sm">Reading your numbers…</div></div>';
+    h = '<div class="space-y-3">' + h + '</div>';
+  }
+  box.innerHTML = h; box.scrollTop = box.scrollHeight;
+  $('chatSend').disabled = CHAT_BUSY; $('chatClear').classList.toggle('hidden', !CHAT.length);
+}
+function sendChat(text) {
+  const inp = $('chatIn'), q = String(text != null ? text : inp.value).trim();
+  if (!q || CHAT_BUSY || !SESSION) return;
+  inp.value = ''; inp.style.height = 'auto';
+  const hist = CHAT.filter(m => !m.err).slice(-6).map(m => ({ role: m.role, text: m.text }));
+  CHAT.push({ role:'user', text:q }); CHAT_BUSY = true; renderChat();
+  const done = r => { CHAT_BUSY = false; CHAT.push({ role:'model', text: r && r.answer || 'No answer came back.' }); renderChat(); };
+  const fail = err => {
+    const m = errMsg(err);
+    if (/expired|denied/i.test(m)) { CHAT_BUSY = false; logout(m); return; }
+    CHAT_BUSY = false; CHAT.push({ role:'model', text:m, err:true }); renderChat();
+  };
+  if (DEMO) { setTimeout(() => done({ answer: demoAnswer(q) }), 900); return; }
+  google.script.run.withSuccessHandler(done).withFailureHandler(fail).askAI(SESSION, q, hist);
+}
+function clearChat() { CHAT = []; CHAT_BUSY = false; renderChat(); }
+function demoStats() {
+  const d = demoData(SESSION), cur = '2026-09', prev = '2026-08', bef = ['2026-06','2026-07','2026-08'];
+  const sum = (rows, k, m) => { const o = {}; rows.filter(r => r.m === m).forEach(r => { o[r[k]] = (o[r[k]] || 0) + (r.s != null ? r.s : r.q); }); return o; };
+  const rc = sum(d.cust, 'rep', cur), rp = sum(d.cust, 'rep', prev), cc = sum(d.cust, 'city', cur), cp = sum(d.cust, 'city', prev);
+  const T = o => Object.values(o).reduce((a, b) => a + b, 0), tgt = {}; d.tgt.filter(r => r.m === cur).forEach(r => { tgt[r.rep] = (tgt[r.rep] || 0) + r.t; });
+  const reps = Object.keys(rc).map(k => ({ n: k, cur: rc[k], prev: rp[k] || 0, chg: rp[k] ? (rc[k] - rp[k]) / rp[k] * 100 : 0, ach: tgt[k] ? rc[k] / tgt[k] * 100 : null })).filter(r => !/^Vacant/.test(r.n));
+  const by = {}; d.cust.forEach(r => { (by[r.id] = by[r.id] || { name: r.name, rep: r.rep, m: {} }).m[r.m] = (by[r.id].m[r.m] || 0) + r.s; });
+  const lost = Object.values(by).filter(c => bef.filter(m => c.m[m] > 0).length >= 2 && !(c.m[cur] > 0)).map(c => ({ name: c.name, rep: c.rep, avg: bef.reduce((a, m) => a + (c.m[m] || 0), 0) / bef.filter(m => c.m[m] > 0).length })).sort((a, b) => b.avg - a.avg);
+  const pc = sum(d.prod, 'name', cur), pr = {}; bef.forEach(m => { const o = sum(d.prod, 'name', m); for (const k in o) pr[k] = (pr[k] || 0) + o[k] / 3; });
+  const prods = Object.keys(pc).map(k => ({ n: k, cur: pc[k], avg: pr[k] || 0, chg: pr[k] ? (pc[k] - pr[k]) / pr[k] * 100 : 0 })).sort((a, b) => b.chg - a.chg);
+  const ids = m => new Set(d.cust.filter(r => r.m === m && r.s > 0).map(r => r.id)).size;
+  const series = ['2026-04','2026-05','2026-06','2026-07','2026-08','2026-09'].map(m => T(sum(d.cust, 'rep', m)));
+  return { cur: T(rc), prev: T(rp), target: T(tgt), reps, cities: Object.keys(cc).map(k => ({ n: k, cur: cc[k], prev: cp[k] || 0, chg: cp[k] ? (cc[k] - cp[k]) / cp[k] * 100 : 0 })), lost, lostVal: lost.reduce((a, c) => a + c.avg, 0), prods, active: ids(cur), activePrev: ids(prev), series };
+}
+const pc1 = v => (v > 0 ? '+' : '') + Math.round(v) + '%';
+function demoInsights() {
+  const s = demoStats(), worst = s.reps.slice().sort((a, b) => a.chg - b.chg)[0], low = s.reps.filter(r => r.ach != null).sort((a, b) => a.ach - b.ach).slice(0, 2);
+  const riser = s.prods[0], faller = s.prods[s.prods.length - 1], city = s.cities.slice().sort((a, b) => a.chg - b.chg)[0], chgT = (s.cur - s.prev) / s.prev * 100;
+  const top3 = s.lost.slice(0, 3).map(c => c.name + ' (' + c.rep + ', ' + money(c.avg) + ' a month)').join('; ');
+  return { ok: true, month: 'September 2026', prevMonth: 'August 2026', aiAt: 'sample', aiError: '', aiNote: '',
+    summary: { total: s.cur, prev: s.prev, chgPct: chgT, target: s.target, achPct: Math.round(s.cur / s.target * 1000) / 10, active: s.active, activePrev: s.activePrev, incomplete: false },
+    flags: [
+      { sev: 'high', type: 'Rep', title: worst.n + ': sales well below normal', detail: 'September ' + money(worst.cur) + ' vs August ' + money(worst.prev) + ' (' + pc1(worst.chg) + ').' },
+      { sev: 'high', type: 'Pharmacies', title: s.lost.length + ' regular pharmacies stopped buying in September', detail: 'Each bought in at least 2 of the last 3 months, about ' + money(s.lostVal) + ' a month combined. Biggest: ' + top3 + '.' },
+      ...low.map(r => ({ sev: 'medium', type: 'Target', title: r.n + ': ' + Math.round(r.ach) + '% of target', detail: 'September sales ' + money(r.cur) + '.' })),
+      { sev: 'medium', type: 'Products', title: faller.n + ' fell in units', detail: Math.round(faller.cur) + ' units vs a usual ' + Math.round(faller.avg) + ' (' + pc1(faller.chg) + ').' },
+      { sev: 'good', type: 'Products', title: riser.n + ' is running above its usual', detail: Math.round(riser.cur) + ' units vs a usual ' + Math.round(riser.avg) + ' (' + pc1(riser.chg) + ').' }],
+    ai: { headline: 'Sales are ' + Math.abs(Math.round(chgT)) + '% ' + (chgT < 0 ? 'below' : 'above') + ' August, and most of the gap traces to one rep and ' + s.lost.length + ' lapsed pharmacies.',
+      summary: 'September net sales were ' + money(s.cur) + ' against a target of ' + money(s.target) + '. ' + worst.n + ' accounts for the sharpest fall, and ' + s.lost.length + ' pharmacies that bought regularly since June did not order this month. ' + riser.n + ' is the one product clearly gaining.',
+      anomalies: [{ severity: 'high', title: worst.n + ' fell sharply', detail: 'Sales went from ' + money(worst.prev) + ' to ' + money(worst.cur) + '. A possible cause is late billing or a gap in territory cover.', check: 'Confirm all September invoices for this rep are entered, then ask about visit coverage.' },
+        { severity: 'high', title: s.lost.length + ' regular pharmacies went quiet', detail: 'Together they usually bought about ' + money(s.lostVal) + ' a month. A possible cause is a stock-out or a competitor offer.', check: 'Call the three biggest first: ' + s.lost.slice(0, 3).map(c => c.name).join(', ') + '.' },
+        { severity: 'medium', title: city.n + ' is the weakest city', detail: 'Down ' + pc1(city.chg) + ' on August, the largest fall of the four cities.', check: 'Check whether the drop is spread out or sits with one rep.' }],
+      patterns: [{ title: 'Six-month trend', detail: 'Monthly sales ran at ' + money(s.series[0]) + ' in April and ' + money(s.series[5]) + ' in September.' }, { title: riser.n + ' keeps rising', detail: 'Units are ' + pc1(riser.chg) + ' above its three-month average, so check stock before it runs short.' }],
+      actions: ['Visit the ' + s.lost.length + ' lapsed pharmacies this week, biggest first.', 'Review ' + worst.n + "'s September billing and route coverage.", 'Make sure ' + riser.n + ' is in stock across all cities.'] } };
+}
+function demoAnswer(q) {
+  const s = demoStats(), l = q.toLowerCase(), R = s.reps.slice();
+  if (/target|below|behind|achiev/.test(l)) return 'Furthest below target in September:\n' + R.filter(r => r.ach != null).sort((a, b) => a.ach - b.ach).slice(0, 3).map(r => '- **' + r.n + '**: ' + Math.round(r.ach) + '% of target (' + money(r.cur) + ')').join('\n');
+  if (/stop|lost|lapse|churn|quiet/.test(l)) return '**' + s.lost.length + '** regular pharmacies did not order in September, worth about **' + money(s.lostVal) + '** a month combined. Biggest:\n' + s.lost.slice(0, 4).map(c => '- ' + c.name + ' (' + c.rep + '): ' + money(c.avg) + ' a month').join('\n');
+  if (/product|grow|rising|unit|syrup|sell/.test(l)) return 'Fastest growing against their 3-month average:\n' + s.prods.slice(0, 3).map(p => '- **' + p.n + '**: ' + Math.round(p.cur) + ' units (' + pc1(p.chg) + ')').join('\n') + '\nBiggest faller: **' + s.prods[s.prods.length - 1].n + '** (' + pc1(s.prods[s.prods.length - 1].chg) + ').';
+  if (/city|region|area/.test(l)) return s.cities.slice().sort((a, b) => b.cur - a.cur).map(c => '- **' + c.n + '**: ' + money(c.cur) + ' (' + pc1(c.chg) + ' vs August)').join('\n');
+  if (/top|best|who|rep/.test(l)) { const t = R.sort((a, b) => b.cur - a.cur)[0]; return 'Top rep in September is **' + t.n + '** with ' + money(t.cur) + ' (' + pc1(t.chg) + ' vs August).'; }
+  if (/summar|review|meeting|overview|month/.test(l)) { const i = demoInsights(); return '- Net sales **' + money(s.cur) + '** vs target ' + money(s.target) + ' (' + Math.round(s.cur / s.target * 100) + '%)\n- ' + i.ai.headline + '\n- Weakest city: ' + i.ai.anomalies[2].title.replace(' is the weakest city', '') + '\n- ' + i.ai.patterns[1].title + '\n- First action: ' + i.ai.actions[0]; }
+  return 'In this demo I can answer about targets, lapsed pharmacies, product growth, cities, top reps, or a monthly summary. Try one of the suggested questions.';
+}
+$('chatIn').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); } });
+$('chatIn').addEventListener('input', function () { this.style.height = 'auto'; this.style.height = Math.min(this.scrollHeight, 120) + 'px'; });
+renderChat();
+
+/* ================= INIT ================= */
+let st; document.getElementById('fSearch').addEventListener('input', () => { clearTimeout(st); st = setTimeout(() => { F.q = document.getElementById('fSearch').value.toLowerCase().trim(); update(); }, 250); });
+if (DEMO && !SESSION) SESSION = 'demo:admin';
+if (DEMO) { document.getElementById('demoBar').classList.remove('hidden'); document.getElementById('lDemo').classList.remove('hidden'); }
+loadData();
+</script>
+</body>
+</html>
